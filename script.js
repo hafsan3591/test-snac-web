@@ -1,6 +1,4 @@
 // script.js — SNAC ANIME core logic
-// ★ শুধু anime-data.js থেকে anime লোড হয় ★
-// ★ localStorage এর ডেটা আর ব্যবহার হয় না ★
 (function () {
   "use strict";
 
@@ -12,11 +10,10 @@
 
   const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const initials = (t) => t.split(/\s+/).filter(Boolean).slice(0, 3).map((w) => w[0].toUpperCase()).join("");
-  const safeTelegram = (url) => typeof url === "string" && /^https?:\/\/t\.me\//i.test(url) ? url : (typeof DEFAULT_TELEGRAM !== "undefined" ? DEFAULT_TELEGRAM : "https://t.me/SNAC_hindi_anime");
+  const safeTelegram = (url) => typeof url === "string" && /^https?:\/\/t\.me\//i.test(url) ? url : "https://t.me/SNAC_hindi_anime";
   const animeUrl = (a) => safeTelegram(a.telegramUrl);
   const t = (key, vars) => window.i18n ? i18n.t(key, vars) : key;
 
-  // ★★★ এখানে শুধু anime-data.js থেকে ডেটা আসে ★★★
   function getAllAnime() {
     return typeof animeList !== "undefined" ? animeList : [];
   }
@@ -40,9 +37,7 @@
       const img = document.createElement("img");
       img.alt = a.title + " poster";
       img.loading = "lazy";
-      img.decoding = "async";
       img.referrerPolicy = "no-referrer";
-      img.crossOrigin = "anonymous";
       img.src = poster;
       let errored = false;
       img.addEventListener("load", () => img.classList.add("loaded"));
@@ -69,14 +64,7 @@
   function fallback(a) {
     const fb = document.createElement("div");
     fb.className = "poster-fallback";
-    const init = document.createElement("div");
-    init.className = "initials";
-    init.textContent = initials(a.title);
-    const sub = document.createElement("div");
-    sub.className = "sub";
-    sub.textContent = (a.year || "") + (a.status === "Movie" ? " • Movie" : "");
-    fb.appendChild(init);
-    fb.appendChild(sub);
+    fb.innerHTML = `<div class="initials">${initials(a.title)}</div><div class="sub">${a.year || ""}</div>`;
     return fb;
   }
 
@@ -86,54 +74,44 @@
     card.dataset.id = a.id;
     card.style.animationDelay = Math.min(idx * 30, 300) + "ms";
     card.appendChild(buildPoster(a));
+    
     const body = document.createElement("div");
     body.className = "card-body";
-    const title = document.createElement("h3");
-    title.className = "card-title";
-    title.textContent = a.title;
-    body.appendChild(title);
-    const meta = document.createElement("div");
-    meta.className = "card-meta";
-    const genreSpan = document.createElement("span");
-    genreSpan.className = "genre";
-    genreSpan.textContent = (a.genre || []).join(" • ");
-    meta.appendChild(genreSpan);
-    if (a.year) {
-      const y = document.createElement("span");
-      y.textContent = "• " + a.year;
-      meta.appendChild(y);
-    }
-    body.appendChild(meta);
-    const actions = document.createElement("div");
-    actions.className = "card-actions";
-    const details = document.createElement("button");
-    details.className = "btn btn-details";
-    details.type = "button";
-    details.textContent = t("card.details") || "Details";
-    details.addEventListener("click", () => openModal(a.id));
-    actions.appendChild(details);
-    const tg = document.createElement("a");
-    tg.className = "btn btn-tg";
-    tg.href = animeUrl(a);
-    tg.target = "_blank";
-    tg.rel = "noopener noreferrer";
-    tg.textContent = t("card.telegram") || "Telegram";
-    actions.appendChild(tg);
-    body.appendChild(actions);
+    body.innerHTML = `
+      <h3 class="card-title">${escapeHtml(a.title)}</h3>
+      <div class="card-meta">
+        <span class="genre">${(a.genre || []).join(" • ")}</span>
+        ${a.year ? `<span>• ${a.year}</span>` : ""}
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-details" onclick="window.SNAC.openModal('${a.id}')">${t("card.details") || "Details"}</button>
+        <a class="btn btn-tg" href="${animeUrl(a)}" target="_blank" rel="noopener noreferrer">${t("card.telegram") || "Telegram"}</a>
+      </div>
+    `;
     card.appendChild(body);
     return card;
   }
 
   function filteredList() {
     let list = getAllAnime();
-    if (state.section === "trending") list = list.filter((a) => a.trending);
-    if (state.section === "latest") list = list.filter((a) => a.latest);
+    
+    // সেকশন ফিল্টার
+    if (state.section === "trending") list = list.filter((a) => a.trending === true);
+    if (state.section === "latest") list = list.filter((a) => a.latest === true);
+    
+    // সার্চ ফিল্টার
     if (state.search.trim()) {
       const q = state.search.trim().toLowerCase();
       list = list.filter((a) => a.title.toLowerCase().includes(q) || (a.titleBn || "").toLowerCase().includes(q) || (a.genre || []).some((g) => g.toLowerCase().includes(q)));
     }
+    
+    // জেনার ফিল্টার
     if (state.genre !== "all") list = list.filter((a) => (a.genre || []).includes(state.genre));
+    
+    // ভাষা ফিল্টার
     if (state.language !== "all") list = list.filter((a) => (a.language || "").toLowerCase() === state.language.toLowerCase());
+    
+    // সর্টিং
     const sorters = {
       latest: (a, b) => (b.year || 0) - (a.year || 0),
       oldest: (a, b) => (a.year || 0) - (b.year || 0),
@@ -150,7 +128,7 @@
     if (!el) return;
     el.innerHTML = "";
     if (!list.length) {
-      el.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="emoji">🔍</div><h3>${t("card.empty") || "কিছু পাওয়া যায়নি"}</h3><p>${escapeHtml(emptyMsg || t("card.emptyDesc") || "অন্য কিছু লিখে আবার চেষ্টা করুন।")}</p></div>`;
+      el.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="emoji">🔍</div><h3>${t("card.empty") || "কিছু পাওয়া যায়নি"}</h3><p>${escapeHtml(emptyMsg)}</p></div>`;
       return;
     }
     const frag = document.createDocumentFragment();
@@ -160,11 +138,13 @@
 
   function renderAll() {
     const all = getAllAnime();
-    const trending = all.filter((a) => a.trending).slice(0, 8);
-    const latest = all.filter((a) => a.latest).sort((a, b) => (b.year || 0) - (a.year || 0)).slice(0, 8);
+    const trending = all.filter((a) => a.trending === true).slice(0, 8);
+    const latest = all.filter((a) => a.latest === true).sort((a, b) => (b.year || 0) - (a.year || 0)).slice(0, 8);
+    
     renderSection("trendingGrid", trending, t("card.noTrending") || "কোনো Trending Anime নেই।");
     renderSection("latestGrid", latest, t("card.noLatest") || "কোনো Latest Anime নেই।");
     renderSection("allGrid", filteredList(), t("card.noSearch") || "আপনার সার্চের সাথে কোনো Anime মেলেনি।");
+    
     updateCount();
     renderCategories();
   }
@@ -191,8 +171,7 @@
       card.innerHTML = `<div class="cat-icon">${icons[g] || "🎬"}</div><div class="cat-name">${g}</div><div class="cat-count">${countText}</div>`;
       card.addEventListener("click", () => {
         state.genre = g;
-        const gs = document.getElementById("genreSelect");
-        if (gs) gs.value = g;
+        document.getElementById("genreSelect").value = g;
         renderAll();
         document.getElementById("all-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
       });
@@ -204,31 +183,25 @@
     const a = getAllAnime().find((x) => x.id === id);
     if (!a) return;
     const overlay = document.getElementById("modalOverlay");
-    if (!overlay) return;
-    overlay.innerHTML = "";
-    const modal = document.createElement("div");
-    modal.className = "modal";
-    modal.setAttribute("role", "dialog");
-    modal.setAttribute("aria-modal", "true");
-    const close = document.createElement("button");
-    close.className = "modal-close";
-    close.type = "button";
-    close.setAttribute("aria-label", t("modal.close") || "বন্ধ করুন");
-    close.textContent = "✕";
-    close.addEventListener("click", closeModal);
-    modal.appendChild(close);
-    const posterWrap = document.createElement("div");
-    posterWrap.className = "modal-poster";
-    posterWrap.appendChild(buildPoster(a));
-    modal.appendChild(posterWrap);
-    const body = document.createElement("div");
-    body.className = "modal-body";
-    body.innerHTML = `<h2>${escapeHtml(a.title)}</h2>${a.titleBn ? `<div class="sub-title">${escapeHtml(a.titleBn)}</div>` : ""}<div class="modal-tags">${(a.genre || []).map((g) => `<span class="tag">${escapeHtml(g)}</span>`).join("")}${a.year ? `<span class="tag">${a.year}</span>` : ""}${a.language ? `<span class="tag">${escapeHtml(a.language)}</span>` : ""}${a.status ? `<span class="tag">${escapeHtml(a.status)}</span>` : ""}${a.rating ? `<span class="tag">★ ${a.rating}</span>` : ""}</div><p class="desc">${escapeHtml(a.description || "")}</p><a class="btn btn-tg" href="${escapeHtml(animeUrl(a))}" target="_blank" rel="noopener noreferrer">${t("modal.watch") || "✈️ Telegram-এ দেখুন"}</a>`;
-    modal.appendChild(body);
-    overlay.appendChild(modal);
+    overlay.innerHTML = `
+      <div class="modal">
+        <button class="modal-close" onclick="window.SNAC.closeModal()">✕</button>
+        <div class="modal-poster">${buildPoster(a).outerHTML}</div>
+        <div class="modal-body">
+          <h2>${escapeHtml(a.title)}</h2>
+          ${a.titleBn ? `<div class="sub-title">${escapeHtml(a.titleBn)}</div>` : ""}
+          <div class="modal-tags">
+            ${(a.genre || []).map((g) => `<span class="tag">${escapeHtml(g)}</span>`).join("")}
+            ${a.year ? `<span class="tag">${a.year}</span>` : ""}
+            ${a.rating ? `<span class="tag">★ ${a.rating}</span>` : ""}
+          </div>
+          <p class="desc">${escapeHtml(a.description || "")}</p>
+          <a class="btn btn-tg" href="${animeUrl(a)}" target="_blank" rel="noopener noreferrer">${t("modal.watch") || "✈️ Telegram-এ দেখুন"}</a>
+        </div>
+      </div>
+    `;
     overlay.classList.add("open");
     document.body.style.overflow = "hidden";
-    close.focus();
   }
 
   function closeModal() {
@@ -246,16 +219,7 @@
     menu.style.display = "none";
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      const isOpen = menu.style.display !== "none";
-      menu.style.display = isOpen ? "none" : "flex";
-      btn.setAttribute("aria-expanded", String(!isOpen));
-    });
-    $$("a, button", menu).forEach((a) => a.addEventListener("click", () => (menu.style.display = "none")));
-    document.addEventListener("click", (e) => {
-      if (menu.style.display !== "none" && !menu.contains(e.target) && !btn.contains(e.target)) {
-        menu.style.display = "none";
-        btn.setAttribute("aria-expanded", "false");
-      }
+      menu.style.display = menu.style.display === "none" ? "flex" : "none";
     });
   }
 
@@ -268,6 +232,7 @@
     bind("languageSelect", "language");
     bind("sortSelect", "sort");
     bind("sectionSelect", "section");
+    
     const search = document.getElementById("filterSearch");
     if (search) {
       let tm;
@@ -276,6 +241,7 @@
         tm = setTimeout(() => { state.search = e.target.value; renderAll(); }, 120);
       });
     }
+    
     const clearBtn = document.getElementById("clearFilters");
     if (clearBtn) {
       clearBtn.addEventListener("click", () => {
@@ -313,13 +279,6 @@
     };
     if (navSearch) navSearch.addEventListener("input", debounced);
     if (mSearch) mSearch.addEventListener("input", debounced);
-    const explore = document.getElementById("exploreBtn");
-    if (explore) {
-      explore.addEventListener("click", (e) => {
-        e.preventDefault();
-        section?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-    }
   }
 
   function setupToTop() {
@@ -351,12 +310,6 @@
     document.querySelectorAll(".m-lang-options [data-lang]").forEach((b) => {
       b.addEventListener("click", () => i18n.setLang(b.dataset.lang));
     });
-    const markActive = () => {
-      const cur = i18n.getLang();
-      document.querySelectorAll("[data-lang]").forEach((b) => b.classList.toggle("active", b.dataset.lang === cur));
-    };
-    markActive();
-    window.addEventListener("snac:langchange", markActive);
   }
 
   window.addEventListener("snac:langchange", () => renderAll());
